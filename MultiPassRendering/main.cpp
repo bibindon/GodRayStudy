@@ -358,7 +358,7 @@ void RenderPass1()
     assert(hResult == S_OK);
 
     static float f = 0.0f;
-    f += 0.025f;
+    f += 0.015f;
 
     D3DXMATRIX mat;
     D3DXMATRIX View;
@@ -370,8 +370,8 @@ void RenderPass1()
                                1.0f,
                                10000.0f);
 
-    D3DXVECTOR3 vec1(10 * sinf(f), 5, -10 * cosf(f));
-    D3DXVECTOR3 vec2(0, 0, 0);
+    D3DXVECTOR3 vec1(5 * sinf(f), 2.5, -5 * cosf(f));
+    D3DXVECTOR3 vec2(0, 0.5, 0);
     D3DXVECTOR3 vec3(0, 1, 0);
     D3DXMatrixLookAtLH(&View, &vec1, &vec2, &vec3);
 
@@ -398,7 +398,7 @@ void RenderPass1()
 
     TCHAR msg[100];
     _tcscpy_s(msg, 100, _T("ゴッドレイの実装に挑戦"));
-    TextDraw(g_pFont, msg, 0, 0);
+    TextDraw(g_pFont, msg, 20, 20);
 
     hResult = g_pEffect1->SetTechnique("Technique1");
     assert(hResult == S_OK);
@@ -455,7 +455,7 @@ void RenderPass2()
 
     // 光源座標
     D3DXMATRIX VP = g_View * g_Proj;
-    D3DXVECTOR4 p(0, 3, 3, 1);
+    D3DXVECTOR4 p(0, 15, 15, 1);
     D3DXVec4Transform(&p, &p, &VP);
 
     // NDC → [0,1] のUVへ
@@ -468,6 +468,15 @@ void RenderPass2()
 
         lightUV[0] = ndcX * 0.5f + 0.5f;
         lightUV[1] = -ndcY * 0.5f + 0.5f; // 上が0のUV系に合わせる
+
+        if (p.w < -0.f)
+        {
+            g_pEffect2->SetFloat("g_bVisible", 0.f);
+        }
+        else
+        {
+            g_pEffect2->SetFloat("g_bVisible", 1.f);
+        }
     }
 
     // エフェクトへセット（単位は 0..1 のUV）
@@ -476,7 +485,7 @@ void RenderPass2()
     // 好みでチューニング可能（省略可）
     g_pEffect2->SetFloat("g_Exposure", 0.9f);
     g_pEffect2->SetFloat("g_Decay", 0.95f);
-    g_pEffect2->SetFloat("g_Density", 0.97f);
+    g_pEffect2->SetFloat("g_Density", 0.3f);
     g_pEffect2->SetFloat("g_Weight", 0.35f);
     g_pEffect2->SetFloat("g_Threshold", 0.7f);
 

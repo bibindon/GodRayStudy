@@ -22,6 +22,8 @@ float g_Density = 0.97f; // サンプル間隔スケール
 float g_Weight = 0.35f; // 各サンプルの寄与初期値
 float g_Threshold = 0.7f; // 明るさ閾値（bright-pass）
 
+float g_bVisible = 0.f;
+
 struct VS_IN
 {
     float4 pos : POSITION; // クリップ空間（-1..1, w=1）
@@ -57,6 +59,7 @@ float4 PS(VS_OUT i) : COLOR
     const int NUM_SAMPLES = 64;
 
     float2 delta = (g_LightScreenPos - i.uv) * (g_Density / NUM_SAMPLES);
+
     float2 coord = i.uv;
 
     float illuminationDecay = 1.0f;
@@ -77,6 +80,8 @@ float4 PS(VS_OUT i) : COLOR
     // 元のシーン色 + ゴッドレイを加算
     float3 scene = tex2D(s0, i.uv).rgb;
     float3 godrays = sum * g_Exposure;
+
+    godrays *= g_bVisible;
 
     return float4(scene + godrays, 1.0f);
 }
