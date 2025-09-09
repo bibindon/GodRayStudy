@@ -1,64 +1,92 @@
-float4x4 g_matWorldViewProj;
-float4 g_lightNormal = { 0.3f, 1.0f, 0.5f, 0.0f };
-float3 g_ambient = { 0.3f, 0.3f, 0.3f };
-
-bool g_bUseTexture = true;
+// simple2.fx（置き換え）
 
 texture texture1;
-sampler textureSampler = sampler_state {
+
+sampler s0 = sampler_state
+{
     Texture = (texture1);
-    MipFilter = NONE;
-    MinFilter = POINT;
-    MagFilter = POINT;
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
 };
 
-void VertexShader1(in  float4 inPosition  : POSITION,
-                   in  float2 inTexCood   : TEXCOORD0,
+// 画面上の光源位置（0..1）。例：太陽の見えている位置
+float2 g_LightScreenPos = float2(0.8f, 0.2f);
 
-                   out float4 outPosition : POSITION,
-                   out float2 outTexCood  : TEXCOORD0)
+// 調整用パラメータ
+float g_Exposure = 0.9f; // 全体の強さ
+float g_Decay = 0.95f; // 減衰（サンプルが進むごとに弱める）
+float g_Density = 0.97f; // サンプル間隔スケール
+float g_Weight = 0.35f; // 各サンプルの寄与初期値
+float g_Threshold = 0.7f; // 明るさ閾値（bright-pass）
+
+struct VS_IN
 {
-    outPosition = inPosition;
-    outTexCood = inTexCood;
+    float4 pos : POSITION; // クリップ空間（-1..1, w=1）
+    float2 uv : TEXCOORD0;
+};
+
+struct VS_OUT
+{
+    float4 pos : POSITION;
+    float2 uv : TEXCOORD0;
+};
+
+VS_OUT VS(VS_IN i)
+{
+    VS_OUT o;
+    o.pos = i.pos;
+    o.uv = i.uv;
+    return o;
 }
 
-void PixelShader1(in float4 inPosition    : POSITION,
-                  in float2 inTexCood     : TEXCOORD0,
-
-                  out float4 outColor     : COLOR)
+float3 BrightPass(float3 c)
 {
-    float4 workColor = (float4)0;
-    workColor = tex2D(textureSampler, inTexCood);
+    // 輝度
+    float l = dot(c, float3(0.299, 0.587, 0.114));
+    // 閾値より暗いところは抑制、明るい所は強調
+    float w = saturate((l - g_Threshold) * 10.0f);
+    return c * w;
+}
 
-    float average = (workColor.r + workColor.g + workColor.b) / 3;
+float4 PS(VS_OUT i) : COLOR
+{
+    // ラジアルブラー（God Rays）
+    const int NUM_SAMPLES = 64;
 
-    // 試しに彩度を上げたり下げたりしてみる
-    if (true)
+    float2 delta = (g_LightScreenPos - i.uv) * (g_Density / NUM_SAMPLES);
+    float2 coord = i.uv;
+
+    float illuminationDecay = 1.0f;
+    float3 sum = 0.0f;
+
+    // ブラー経路上をサンプルして蓄積
+    [unroll]
+    for (int s = 0; s < NUM_SAMPLES; ++s)
     {
-        workColor.r += (workColor.r - average);
-        workColor.g += (workColor.g - average);
-        workColor.b += (workColor.b - average);
-    }
-    else
-    {
-        workColor.r -= (workColor.r - average) / 2.f;
-        workColor.g -= (workColor.g - average) / 2.f;
-        workColor.b -= (workColor.b - average) / 2.f;
+        coord += delta;
+        float3 c = tex2D(s0, coord).rgb;
+        c = BrightPass(c); // 明るい所だけを通す
+        c *= illuminationDecay * g_Weight; // 減衰しながら足す
+        sum += c;
+        illuminationDecay *= g_Decay;
     }
 
-    workColor = saturate(workColor);
+    // 元のシーン色 + ゴッドレイを加算
+    float3 scene = tex2D(s0, i.uv).rgb;
+    float3 godrays = sum * g_Exposure;
 
-    outColor = workColor;
-    
+    return float4(scene + godrays, 1.0f);
 }
 
 technique Technique1
 {
-    pass Pass1
+    pass P0
     {
         CullMode = NONE;
-
-        VertexShader = compile vs_3_0 VertexShader1();
-        PixelShader = compile ps_3_0 PixelShader1();
-   }
+        VertexShader = compile vs_3_0 VS();
+        PixelShader = compile ps_3_0 PS();
+    }
 }

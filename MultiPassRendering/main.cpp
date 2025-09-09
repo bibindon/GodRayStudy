@@ -34,6 +34,9 @@ LPDIRECT3DTEXTURE9 g_pRenderTarget = NULL;
 
 LPDIRECT3DVERTEXDECLARATION9 g_pQuadDecl = NULL;
 
+D3DXMATRIX g_View;
+D3DXMATRIX g_Proj;
+
 struct QuadVertex
 {
     // クリップ空間用（-1..1, w=1）
@@ -358,7 +361,8 @@ void RenderPass1()
     f += 0.025f;
 
     D3DXMATRIX mat;
-    D3DXMATRIX View, Proj;
+    D3DXMATRIX View;
+    D3DXMATRIX Proj;
 
     D3DXMatrixPerspectiveFovLH(&Proj,
                                D3DXToRadian(45),
@@ -370,6 +374,10 @@ void RenderPass1()
     D3DXVECTOR3 vec2(0, 0, 0);
     D3DXVECTOR3 vec3(0, 1, 0);
     D3DXMatrixLookAtLH(&View, &vec1, &vec2, &vec3);
+
+    g_View = View;
+    g_Proj = Proj;
+
     D3DXMatrixIdentity(&mat);
     mat = mat * View * Proj;
 
@@ -389,7 +397,7 @@ void RenderPass1()
     assert(hResult == S_OK);
 
     TCHAR msg[100];
-    _tcscpy_s(msg, 100, _T("SSAOに挑戦"));
+    _tcscpy_s(msg, 100, _T("ゴッドレイの実装に挑戦"));
     TextDraw(g_pFont, msg, 0, 0);
 
     hResult = g_pEffect1->SetTechnique("Technique1");
@@ -444,6 +452,35 @@ void RenderPass1()
 void RenderPass2()
 {
     HRESULT hResult = E_FAIL;
+
+    // 光源座標
+    D3DXMATRIX VP = g_View * g_Proj;
+    D3DXVECTOR4 p(0, 3, 3, 1);
+    D3DXVec4Transform(&p, &p, &VP);
+
+    // NDC → [0,1] のUVへ
+    float lightUV[2] = { 0.5f, 0.5f };
+    if (p.w != 0.0f)
+    {
+        float invW = 1.0f / p.w;
+        float ndcX = p.x * invW;    // -1..1
+        float ndcY = p.y * invW;    // -1..1（画面上を+にしたいので後で符号反転）
+
+        lightUV[0] = ndcX * 0.5f + 0.5f;
+        lightUV[1] = -ndcY * 0.5f + 0.5f; // 上が0のUV系に合わせる
+    }
+
+    // エフェクトへセット（単位は 0..1 のUV）
+    g_pEffect2->SetFloatArray("g_LightScreenPos", lightUV, 2);
+
+    // 好みでチューニング可能（省略可）
+    g_pEffect2->SetFloat("g_Exposure", 0.9f);
+    g_pEffect2->SetFloat("g_Decay", 0.95f);
+    g_pEffect2->SetFloat("g_Density", 0.97f);
+    g_pEffect2->SetFloat("g_Weight", 0.35f);
+    g_pEffect2->SetFloat("g_Threshold", 0.7f);
+
+    g_pEffect2->CommitChanges();
 
     hResult = g_pd3dDevice->Clear(0,
                                   NULL,
