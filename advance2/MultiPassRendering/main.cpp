@@ -611,6 +611,9 @@ void RenderCompositePass()
     hResult = g_pEffect2->SetFloat("g_RayIntensity", 0.6f * lightVisible);
     assert(hResult == S_OK);
 
+    hResult = g_pEffect2->SetFloat("g_OcclusionFalloff", 6.0f);
+    assert(hResult == S_OK);
+
     hResult = g_pEffect2->SetFloat("g_DebugShowOcclusion", 0.0f);
     assert(hResult == S_OK);
 
