@@ -28,11 +28,14 @@ DWORD g_dwNumMaterials = 0;
 LPD3DXEFFECT g_pEffect1 = NULL;
 LPD3DXEFFECT g_pEffect2 = NULL;
 LPD3DXEFFECT g_pMaskEffect = NULL;
+LPD3DXEFFECT g_pBlurEffect = NULL;
 
 bool g_bClose = false;
 
 LPDIRECT3DTEXTURE9 g_pSceneRenderTarget = NULL;
 LPDIRECT3DTEXTURE9 g_pOcclusionRenderTarget = NULL;
+LPDIRECT3DTEXTURE9 g_pBlurTempRenderTarget = NULL;
+LPDIRECT3DTEXTURE9 g_pBlurredOcclusionRenderTarget = NULL;
 
 LPDIRECT3DVERTEXDECLARATION9 g_pQuadDecl = NULL;
 
@@ -78,6 +81,7 @@ static void Cleanup();
 
 static void RenderScenePass();
 static void RenderOcclusionPass();
+static void RenderOcclusionBlurPass();
 static void RenderCompositePass();
 static void DrawFullscreenQuad();
 
@@ -150,6 +154,7 @@ int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
 
             RenderScenePass();
             RenderOcclusionPass();
+            RenderOcclusionBlurPass();
             RenderCompositePass();
         }
 
@@ -331,6 +336,17 @@ void InitD3D(HWND hWnd)
 
     assert(hResult == S_OK);
 
+    hResult = D3DXCreateEffectFromFile(g_pd3dDevice,
+                                       _T("blur.fx"),
+                                       NULL,
+                                       NULL,
+                                       D3DXSHADER_DEBUG,
+                                       NULL,
+                                       &g_pBlurEffect,
+                                       NULL);
+
+    assert(hResult == S_OK);
+
     hResult = D3DXCreateSphere(g_pd3dDevice,
                                2.0f,
                                32,
@@ -360,6 +376,26 @@ void InitD3D(HWND hWnd)
                                 &g_pOcclusionRenderTarget);
     assert(hResult == S_OK);
 
+    hResult = D3DXCreateTexture(g_pd3dDevice,
+                                kRenderWidth,
+                                kRenderHeight,
+                                1,
+                                D3DUSAGE_RENDERTARGET,
+                                D3DFMT_A8R8G8B8,
+                                D3DPOOL_DEFAULT,
+                                &g_pBlurTempRenderTarget);
+    assert(hResult == S_OK);
+
+    hResult = D3DXCreateTexture(g_pd3dDevice,
+                                kRenderWidth,
+                                kRenderHeight,
+                                1,
+                                D3DUSAGE_RENDERTARGET,
+                                D3DFMT_A8R8G8B8,
+                                D3DPOOL_DEFAULT,
+                                &g_pBlurredOcclusionRenderTarget);
+    assert(hResult == S_OK);
+
     D3DVERTEXELEMENT9 elems[] =
     {
         { 0,  0, D3DDECLTYPE_FLOAT4, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0 },
@@ -383,8 +419,11 @@ void Cleanup()
     SAFE_RELEASE(g_pEffect1);
     SAFE_RELEASE(g_pEffect2);
     SAFE_RELEASE(g_pMaskEffect);
+    SAFE_RELEASE(g_pBlurEffect);
     SAFE_RELEASE(g_pSceneRenderTarget);
     SAFE_RELEASE(g_pOcclusionRenderTarget);
+    SAFE_RELEASE(g_pBlurTempRenderTarget);
+    SAFE_RELEASE(g_pBlurredOcclusionRenderTarget);
     SAFE_RELEASE(g_pQuadDecl);
     SAFE_RELEASE(g_pFont);
     SAFE_RELEASE(g_pd3dDevice);
@@ -582,6 +621,123 @@ void RenderOcclusionPass()
     SAFE_RELEASE(pOldRenderTarget);
 }
 
+void RenderOcclusionBlurPass()
+{
+    HRESULT hResult = E_FAIL;
+
+    LPDIRECT3DSURFACE9 pOldRenderTarget = nullptr;
+    hResult = g_pd3dDevice->GetRenderTarget(0, &pOldRenderTarget);
+    assert(hResult == S_OK);
+
+    LPDIRECT3DSURFACE9 pTempSurface = nullptr;
+    hResult = g_pBlurTempRenderTarget->GetSurfaceLevel(0, &pTempSurface);
+    assert(hResult == S_OK);
+
+    hResult = g_pd3dDevice->SetRenderTarget(0, pTempSurface);
+    assert(hResult == S_OK);
+
+    hResult = g_pd3dDevice->Clear(0,
+                                  NULL,
+                                  D3DCLEAR_TARGET,
+                                  D3DCOLOR_ARGB(255, 255, 255, 255),
+                                  1.0f,
+                                  0);
+    assert(hResult == S_OK);
+
+    hResult = g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
+    assert(hResult == S_OK);
+
+    hResult = g_pd3dDevice->BeginScene();
+    assert(hResult == S_OK);
+
+    hResult = g_pBlurEffect->SetTechnique("Technique1");
+    assert(hResult == S_OK);
+
+    UINT numPass = 0;
+    hResult = g_pBlurEffect->Begin(&numPass, 0);
+    assert(hResult == S_OK);
+
+    hResult = g_pBlurEffect->BeginPass(0);
+    assert(hResult == S_OK);
+
+    const float texelSize[2] =
+    {
+        1.0f / static_cast<float>(kRenderWidth),
+        1.0f / static_cast<float>(kRenderHeight)
+    };
+    const float horizontal[2] = { texelSize[0], 0.0f };
+
+    hResult = g_pBlurEffect->SetTexture("g_SourceTexture", g_pOcclusionRenderTarget);
+    assert(hResult == S_OK);
+    hResult = g_pBlurEffect->SetFloatArray("g_TexelSize", texelSize, 2);
+    assert(hResult == S_OK);
+    hResult = g_pBlurEffect->SetFloatArray("g_BlurDirection", horizontal, 2);
+    assert(hResult == S_OK);
+    hResult = g_pBlurEffect->CommitChanges();
+    assert(hResult == S_OK);
+
+    DrawFullscreenQuad();
+
+    hResult = g_pBlurEffect->EndPass();
+    assert(hResult == S_OK);
+    hResult = g_pBlurEffect->End();
+    assert(hResult == S_OK);
+    hResult = g_pd3dDevice->EndScene();
+    assert(hResult == S_OK);
+
+    LPDIRECT3DSURFACE9 pBlurredSurface = nullptr;
+    hResult = g_pBlurredOcclusionRenderTarget->GetSurfaceLevel(0, &pBlurredSurface);
+    assert(hResult == S_OK);
+    hResult = g_pd3dDevice->SetRenderTarget(0, pBlurredSurface);
+    assert(hResult == S_OK);
+
+    hResult = g_pd3dDevice->Clear(0,
+                                  NULL,
+                                  D3DCLEAR_TARGET,
+                                  D3DCOLOR_ARGB(255, 255, 255, 255),
+                                  1.0f,
+                                  0);
+    assert(hResult == S_OK);
+
+    hResult = g_pd3dDevice->BeginScene();
+    assert(hResult == S_OK);
+
+    hResult = g_pBlurEffect->SetTechnique("Technique1");
+    assert(hResult == S_OK);
+    hResult = g_pBlurEffect->Begin(&numPass, 0);
+    assert(hResult == S_OK);
+    hResult = g_pBlurEffect->BeginPass(0);
+    assert(hResult == S_OK);
+
+    const float vertical[2] = { 0.0f, texelSize[1] };
+    hResult = g_pBlurEffect->SetTexture("g_SourceTexture", g_pBlurTempRenderTarget);
+    assert(hResult == S_OK);
+    hResult = g_pBlurEffect->SetFloatArray("g_TexelSize", texelSize, 2);
+    assert(hResult == S_OK);
+    hResult = g_pBlurEffect->SetFloatArray("g_BlurDirection", vertical, 2);
+    assert(hResult == S_OK);
+    hResult = g_pBlurEffect->CommitChanges();
+    assert(hResult == S_OK);
+
+    DrawFullscreenQuad();
+
+    hResult = g_pBlurEffect->EndPass();
+    assert(hResult == S_OK);
+    hResult = g_pBlurEffect->End();
+    assert(hResult == S_OK);
+    hResult = g_pd3dDevice->EndScene();
+    assert(hResult == S_OK);
+
+    hResult = g_pd3dDevice->SetRenderTarget(0, pOldRenderTarget);
+    assert(hResult == S_OK);
+    hResult = g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, TRUE);
+    assert(hResult == S_OK);
+
+    SAFE_RELEASE(pBlurredSurface);
+    SAFE_RELEASE(pTempSurface);
+    SAFE_RELEASE(pOldRenderTarget);
+}
+
 void RenderCompositePass()
 {
     HRESULT hResult = E_FAIL;
@@ -648,7 +804,7 @@ void RenderCompositePass()
     hResult = g_pEffect2->SetTexture("g_SceneTexture", g_pSceneRenderTarget);
     assert(hResult == S_OK);
 
-    hResult = g_pEffect2->SetTexture("g_OcclusionTexture", g_pOcclusionRenderTarget);
+    hResult = g_pEffect2->SetTexture("g_OcclusionTexture", g_pBlurredOcclusionRenderTarget);
     assert(hResult == S_OK);
 
     hResult = g_pEffect2->CommitChanges();
