@@ -41,6 +41,8 @@ LPDIRECT3DVERTEXDECLARATION9 g_pQuadDecl = NULL;
 
 D3DXMATRIX g_View;
 D3DXMATRIX g_Proj;
+D3DXVECTOR3 g_CurrentCameraPosition;
+D3DXVECTOR3 g_CurrentLightPosition;
 
 const int kRenderWidth = 1600;
 const int kRenderHeight = 900;
@@ -433,6 +435,8 @@ void Cleanup()
 void RenderScenePass()
 {
     HRESULT hResult = E_FAIL;
+    static float orbitAngle = 0.0f;
+    orbitAngle += 0.01f;
 
     LPDIRECT3DSURFACE9 pOldRenderTarget = nullptr;
     hResult = g_pd3dDevice->GetRenderTarget(0, &pOldRenderTarget);
@@ -454,7 +458,18 @@ void RenderScenePass()
                                1.0f,
                                10000.0f);
 
-    D3DXVECTOR3 vec1 = kCameraPosition;
+    D3DXMATRIX orbitRotation;
+    D3DXMatrixRotationY(&orbitRotation, orbitAngle);
+
+    D3DXVECTOR3 cameraOffset = kCameraPosition - kSceneCenter;
+    D3DXVec3TransformCoord(&g_CurrentCameraPosition, &cameraOffset, &orbitRotation);
+    g_CurrentCameraPosition += kSceneCenter;
+
+    D3DXVECTOR3 lightOffset = kLightPosition - kSceneCenter;
+    D3DXVec3TransformCoord(&g_CurrentLightPosition, &lightOffset, &orbitRotation);
+    g_CurrentLightPosition += kSceneCenter;
+
+    D3DXVECTOR3 vec1 = g_CurrentCameraPosition;
     D3DXVECTOR3 vec2 = kCameraTarget;
     D3DXVECTOR3 vec3(0, 1, 0);
     D3DXMatrixLookAtLH(&View, &vec1, &vec2, &vec3);
@@ -517,7 +532,10 @@ void RenderScenePass()
     {
         D3DXMATRIX lightWorld;
         D3DXMATRIX lightWorldViewProj;
-        D3DXMatrixTranslation(&lightWorld, kLightPosition.x, kLightPosition.y, kLightPosition.z);
+        D3DXMatrixTranslation(&lightWorld,
+                              g_CurrentLightPosition.x,
+                              g_CurrentLightPosition.y,
+                              g_CurrentLightPosition.z);
         lightWorldViewProj = lightWorld * View * Proj;
 
         hResult = g_pEffect1->SetMatrix("g_matWorldViewProj", &lightWorldViewProj);
@@ -743,7 +761,10 @@ void RenderCompositePass()
     HRESULT hResult = E_FAIL;
 
     D3DXMATRIX VP = g_View * g_Proj;
-    D3DXVECTOR4 projectedLight(kLightPosition.x, kLightPosition.y, kLightPosition.z, 1.0f);
+    D3DXVECTOR4 projectedLight(g_CurrentLightPosition.x,
+                               g_CurrentLightPosition.y,
+                               g_CurrentLightPosition.z,
+                               1.0f);
     D3DXVec4Transform(&projectedLight, &projectedLight, &VP);
 
     float lightUV[2] = { 0.5f, 0.5f };
