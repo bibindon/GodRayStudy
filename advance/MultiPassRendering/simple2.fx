@@ -86,13 +86,11 @@ float4 PS(VS_OUT i) : COLOR
         illuminationDecay *= g_Decay;
     }
 
-    // 元のシーン色 + ゴッドレイを加算
-    float3 scene = tex2D(s0, i.uv).rgb;
     float3 godrays = sum * g_Exposure;
 
     godrays *= g_bVisible;
 
-    return float4(scene + godrays, 1.0f);
+    return float4(godrays, 1.0f);
 }
 
 technique Technique1
