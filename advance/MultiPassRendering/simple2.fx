@@ -14,6 +14,7 @@ sampler s0 = sampler_state
 
 // 画面上の光源位置（0..1）。例：太陽の見えている位置
 float2 g_LightScreenPos = float2(0.8f, 0.2f);
+float2 g_ScreenSize = float2(1600.0f, 900.0f);
 
 // 調整用パラメータ
 float g_Exposure = 0.9f; // 全体の強さ
@@ -21,6 +22,7 @@ float g_Decay = 0.95f; // 減衰（サンプルが進むごとに弱める）
 float g_Density = 0.97f; // サンプル間隔スケール
 float g_Weight = 0.35f; // 各サンプルの寄与初期値
 float g_Threshold = 0.7f; // 明るさ閾値（bright-pass）
+float g_SampleStepPixels = 12.0f; // 1サンプルごとの間隔（ピクセル）
 
 float g_bVisible = 0.f;
 
@@ -56,9 +58,16 @@ float3 BrightPass(float3 c)
 float4 PS(VS_OUT i) : COLOR
 {
     // ラジアルブラー（God Rays）
-    const int NUM_SAMPLES = 64;
+    const int NUM_SAMPLES = 32;
+    float2 lightVectorPixels = (g_LightScreenPos - i.uv) * g_ScreenSize;
+    float distancePixels = length(lightVectorPixels);
+    float2 stepDirPixels = float2(0.0f, 0.0f);
+    if (distancePixels > 0.0001f)
+    {
+        stepDirPixels = lightVectorPixels / distancePixels;
+    }
 
-    float2 delta = (g_LightScreenPos - i.uv) * (g_Density / NUM_SAMPLES);
+    float2 delta = (stepDirPixels * (g_SampleStepPixels * g_Density)) / g_ScreenSize;
 
     float2 coord = i.uv;
 

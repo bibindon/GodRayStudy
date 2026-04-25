@@ -484,6 +484,8 @@ void RenderPass2()
 
     // エフェクトへセット（単位は 0..1 のUV）
     g_pEffect2->SetFloatArray("g_LightScreenPos", lightUV, 2);
+    const float screenSize[2] = { static_cast<float>(kRenderWidth), static_cast<float>(kRenderHeight) };
+    g_pEffect2->SetFloatArray("g_ScreenSize", screenSize, 2);
 
     // 好みでチューニング可能（省略可）
     g_pEffect2->SetFloat("g_Exposure", 0.9f);
@@ -491,6 +493,7 @@ void RenderPass2()
     g_pEffect2->SetFloat("g_Density", 0.3f);
     g_pEffect2->SetFloat("g_Weight", 0.35f);
     g_pEffect2->SetFloat("g_Threshold", 0.7f);
+    g_pEffect2->SetFloat("g_SampleStepPixels", 128.0f);
 
     g_pEffect2->CommitChanges();
 
