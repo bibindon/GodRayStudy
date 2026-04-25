@@ -2,8 +2,6 @@
 # この .gitignore ファイルは Microsoft(R) Visual Studio によって自動的に作成されました。
 ################################################################################
 
-/.vs
-/MultiPassRendering/x64
-/packages
-/x64
-/advance/.vs/MultiPassRendering
+.vs
+packages
+x64
