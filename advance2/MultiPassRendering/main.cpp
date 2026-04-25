@@ -360,9 +360,6 @@ void RenderPass1()
     hResult = g_pd3dDevice->SetRenderTarget(0, pRenderTarget);
     assert(hResult == S_OK);
 
-    static float f = 0.0f;
-    f += 0.03f;
-
     D3DXMATRIX mat;
     D3DXMATRIX View;
     D3DXMATRIX Proj;
@@ -373,8 +370,8 @@ void RenderPass1()
                                1.0f,
                                10000.0f);
 
-    D3DXVECTOR3 vec1(5 * sinf(f), 2.5, -5 * cosf(f));
-    D3DXVECTOR3 vec2(0, 0.5, 0);
+    D3DXVECTOR3 vec1(0.0f, 3.0f, -12.0f);
+    D3DXVECTOR3 vec2(0, 0.5f, 0);
     D3DXVECTOR3 vec3(0, 1, 0);
     D3DXMatrixLookAtLH(&View, &vec1, &vec2, &vec3);
 
