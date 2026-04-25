@@ -37,6 +37,9 @@ LPDIRECT3DVERTEXDECLARATION9 g_pQuadDecl = NULL;
 D3DXMATRIX g_View;
 D3DXMATRIX g_Proj;
 
+const int kRenderWidth = 1600;
+const int kRenderHeight = 900;
+
 struct QuadVertex
 {
     // クリップ空間用（-1..1, w=1）
@@ -90,7 +93,7 @@ int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
     assert(atom != 0);
 
     RECT rect;
-    SetRect(&rect, 0, 0, 640, 480);
+    SetRect(&rect, 0, 0, kRenderWidth, kRenderHeight);
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
     rect.right = rect.right - rect.left;
     rect.bottom = rect.bottom - rect.top;
@@ -306,8 +309,8 @@ void InitD3D(HWND hWnd)
     assert(hResult == S_OK);
 
     hResult = D3DXCreateTexture(g_pd3dDevice,
-                                640,
-                                480,
+                                kRenderWidth,
+                                kRenderHeight,
                                 1,
                                 D3DUSAGE_RENDERTARGET,
                                 D3DFMT_A8R8G8B8,
@@ -366,7 +369,7 @@ void RenderPass1()
 
     D3DXMatrixPerspectiveFovLH(&Proj,
                                D3DXToRadian(45),
-                               640.0f / 480.0f,
+                               static_cast<float>(kRenderWidth) / static_cast<float>(kRenderHeight),
                                1.0f,
                                10000.0f);
 
@@ -545,8 +548,8 @@ void DrawFullscreenQuad()
     QuadVertex v[4] { };
 
     // クリップ空間の矩形（TriangleStrip）
-    float du = 0.5f / 640.f;
-    float dv = 0.5f / 480.f;
+    float du = 0.5f / static_cast<float>(kRenderWidth);
+    float dv = 0.5f / static_cast<float>(kRenderHeight);
 
     v[0].x = -1.0f;
     v[0].y = -1.0f;
