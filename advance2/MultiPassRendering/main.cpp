@@ -40,6 +40,19 @@ D3DXMATRIX g_Proj;
 const int kRenderWidth = 1600;
 const int kRenderHeight = 900;
 
+const D3DXVECTOR3 kCubePositions[] =
+{
+    D3DXVECTOR3(-8.0f, -0.5f, -2.0f),
+    D3DXVECTOR3(-5.0f,  1.2f,  1.0f),
+    D3DXVECTOR3(-2.0f, -0.3f,  4.0f),
+    D3DXVECTOR3( 1.0f,  1.0f, -3.0f),
+    D3DXVECTOR3( 4.0f, -0.6f,  2.0f),
+    D3DXVECTOR3( 7.0f,  1.1f,  5.0f),
+    D3DXVECTOR3(-7.0f,  3.0f,  6.0f),
+    D3DXVECTOR3(-3.5f,  3.5f, -4.5f),
+    D3DXVECTOR3( 7.5f,  2.6f, -1.0f)
+};
+
 struct QuadVertex
 {
     // クリップ空間用（-1..1, w=1）
@@ -300,7 +313,7 @@ void InitD3D(HWND hWnd)
     assert(hResult == S_OK);
 
     hResult = D3DXCreateSphere(g_pd3dDevice,
-                               20.f,
+                               2.0f,
                                32,
                                32,
                                &g_pMeshSphere,
@@ -360,7 +373,6 @@ void RenderPass1()
     hResult = g_pd3dDevice->SetRenderTarget(0, pRenderTarget);
     assert(hResult == S_OK);
 
-    D3DXMATRIX mat;
     D3DXMATRIX View;
     D3DXMATRIX Proj;
 
@@ -377,12 +389,6 @@ void RenderPass1()
 
     g_View = View;
     g_Proj = Proj;
-
-    D3DXMatrixIdentity(&mat);
-    mat = mat * View * Proj;
-
-    hResult = g_pEffect1->SetMatrix("g_matWorldViewProj", &mat);
-    assert(hResult == S_OK);
 
     hResult = g_pd3dDevice->Clear(0,
                                   NULL,
@@ -413,19 +419,38 @@ void RenderPass1()
     hResult = g_pEffect1->SetBool("g_bUseTexture", TRUE);
     assert(hResult == S_OK);
 
-    for (DWORD i = 0; i < g_dwNumMaterials; i++)
+    for (const D3DXVECTOR3& cubePos : kCubePositions)
     {
-        hResult = g_pEffect1->SetTexture("texture1", g_pTextures[i]);
+        D3DXMATRIX world;
+        D3DXMATRIX worldViewProj;
+        D3DXMatrixTranslation(&world, cubePos.x, cubePos.y, cubePos.z);
+        worldViewProj = world * View * Proj;
+
+        hResult = g_pEffect1->SetMatrix("g_matWorldViewProj", &worldViewProj);
         assert(hResult == S_OK);
 
-        hResult = g_pEffect1->CommitChanges();
-        assert(hResult == S_OK);
+        for (DWORD i = 0; i < g_dwNumMaterials; i++)
+        {
+            hResult = g_pEffect1->SetTexture("texture1", g_pTextures[i]);
+            assert(hResult == S_OK);
 
-        hResult = g_pMesh->DrawSubset(i);
-        assert(hResult == S_OK);
+            hResult = g_pEffect1->CommitChanges();
+            assert(hResult == S_OK);
+
+            hResult = g_pMesh->DrawSubset(i);
+            assert(hResult == S_OK);
+        }
     }
 
     {
+        D3DXMATRIX lightWorld;
+        D3DXMATRIX lightWorldViewProj;
+        D3DXMatrixTranslation(&lightWorld, 0.0f, 15.0f, 15.0f);
+        lightWorldViewProj = lightWorld * View * Proj;
+
+        hResult = g_pEffect1->SetMatrix("g_matWorldViewProj", &lightWorldViewProj);
+        assert(hResult == S_OK);
+
         hResult = g_pEffect1->SetBool("g_bUseTexture", FALSE);
         assert(hResult == S_OK);
 
