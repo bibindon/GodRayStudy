@@ -208,7 +208,7 @@ void InitD3D(HWND hWnd)
                              OUT_TT_ONLY_PRECIS,
                              CLEARTYPE_NATURAL_QUALITY,
                              FF_DONTCARE,
-                             _T("ＭＳ ゴシック"),
+                             _T("MS Gothic"),
                              &g_pFont);
 
     assert(hResult == S_OK);
@@ -397,7 +397,7 @@ void RenderPass1()
     assert(hResult == S_OK);
 
     TCHAR msg[100];
-    _tcscpy_s(msg, 100, _T("ゴッドレイの実装に挑戦"));
+    _tcscpy_s(msg, 100, _T("God Ray Challenge"));
     TextDraw(g_pFont, msg, 20, 20);
 
     hResult = g_pEffect1->SetTechnique("Technique1");
