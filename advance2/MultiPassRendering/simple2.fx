@@ -1,32 +1,38 @@
-// simple2.fx（置き換え）
+texture g_SceneTexture;
+texture g_OcclusionTexture;
 
-texture texture1;
-
-sampler s0 = sampler_state
+sampler g_SceneSampler = sampler_state
 {
-    Texture = (texture1);
+    Texture = (g_SceneTexture);
     MinFilter = LINEAR;
     MagFilter = LINEAR;
-    MipFilter = LINEAR;
+    MipFilter = NONE;
     AddressU = CLAMP;
     AddressV = CLAMP;
 };
 
-// 画面上の光源位置（0..1）。例：太陽の見えている位置
-float2 g_LightScreenPos = float2(0.8f, 0.2f);
+sampler g_OcclusionSampler = sampler_state
+{
+    Texture = (g_OcclusionTexture);
+    MinFilter = LINEAR;
+    MagFilter = LINEAR;
+    MipFilter = NONE;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
+};
 
-// 調整用パラメータ
-float g_Exposure = 0.9f; // 全体の強さ
-float g_Decay = 0.95f; // 減衰（サンプルが進むごとに弱める）
-float g_Density = 0.97f; // サンプル間隔スケール
-float g_Weight = 0.35f; // 各サンプルの寄与初期値
-float g_Threshold = 0.7f; // 明るさ閾値（bright-pass）
+float2 g_LightScreenPos = float2(0.5f, 0.2f);
+float3 g_LightColor = float3(1.0f, 1.0f, 1.0f);
 
-float g_bVisible = 0.f;
+float g_RayLength = 1.0f;
+float g_RayIntensity = 0.9f;
+float g_DebugShowOcclusion = 0.0f;
+
+static const int SAMPLE_COUNT = 200;
 
 struct VS_IN
 {
-    float4 pos : POSITION; // クリップ空間（-1..1, w=1）
+    float4 pos : POSITION;
     float2 uv : TEXCOORD0;
 };
 
@@ -44,46 +50,36 @@ VS_OUT VS(VS_IN i)
     return o;
 }
 
-float3 BrightPass(float3 c)
-{
-    // 輝度
-    float l = dot(c, float3(0.299, 0.587, 0.114));
-    // 閾値より暗いところは抑制、明るい所は強調
-    float w = saturate((l - g_Threshold) * 10.0f);
-    return c * w;
-}
-
 float4 PS(VS_OUT i) : COLOR
 {
-    // ラジアルブラー（God Rays）
-    const int NUM_SAMPLES = 64;
-
-    float2 delta = (g_LightScreenPos - i.uv) * (g_Density / NUM_SAMPLES);
-
-    float2 coord = i.uv;
-
-    float illuminationDecay = 1.0f;
-    float3 sum = 0.0f;
-
-    // ブラー経路上をサンプルして蓄積
-    [unroll]
-    for (int s = 0; s < NUM_SAMPLES; ++s)
+    if (g_DebugShowOcclusion > 0.5f)
     {
-        coord += delta;
-        float3 c = tex2D(s0, coord).rgb;
-        c = BrightPass(c); // 明るい所だけを通す
-        c *= illuminationDecay * g_Weight; // 減衰しながら足す
-        sum += c;
-        illuminationDecay *= g_Decay;
+        float mask = tex2D(g_OcclusionSampler, i.uv).r;
+        return float4(mask, mask, mask, 1.0f);
     }
 
-    // 元のシーン色 + ゴッドレイを加算
-    float3 scene = tex2D(s0, i.uv).rgb;
-    float3 godrays = sum * g_Exposure;
+    float2 lightPos = g_LightScreenPos;
+    float2 dir = lightPos - i.uv;
 
-    godrays *= g_bVisible;
+    float lightRays = 0.0f;
 
-    return float4(scene + godrays, 1.0f);
+    [loop]
+    for (int s = 0; s < SAMPLE_COUNT; ++s)
+    {
+        float t = g_RayLength * (float(s) / float(SAMPLE_COUNT - 1));
+        float2 sampleUv = i.uv + dir * t;
+        float visibility = 0.0f;
+        if (sampleUv.x >= 0.0f && sampleUv.x <= 1.0f &&
+            sampleUv.y >= 0.0f && sampleUv.y <= 1.0f)
+        {
+            visibility = tex2D(g_OcclusionSampler, sampleUv).r;
+        }
+        lightRays += visibility / float(SAMPLE_COUNT);
+    }
+
+    float3 sceneColor = tex2D(g_SceneSampler, i.uv).rgb;
+    float3 rayColor = lightRays * g_RayIntensity * g_LightColor;
+    return float4(sceneColor + rayColor, 1.0f);
 }
 
 technique Technique1

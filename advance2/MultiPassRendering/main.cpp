@@ -27,10 +27,12 @@ std::vector<LPDIRECT3DTEXTURE9> g_pTextures;
 DWORD g_dwNumMaterials = 0;
 LPD3DXEFFECT g_pEffect1 = NULL;
 LPD3DXEFFECT g_pEffect2 = NULL;
+LPD3DXEFFECT g_pMaskEffect = NULL;
 
 bool g_bClose = false;
 
-LPDIRECT3DTEXTURE9 g_pRenderTarget = NULL;
+LPDIRECT3DTEXTURE9 g_pSceneRenderTarget = NULL;
+LPDIRECT3DTEXTURE9 g_pOcclusionRenderTarget = NULL;
 
 LPDIRECT3DVERTEXDECLARATION9 g_pQuadDecl = NULL;
 
@@ -39,6 +41,10 @@ D3DXMATRIX g_Proj;
 
 const int kRenderWidth = 1600;
 const int kRenderHeight = 900;
+const D3DXVECTOR3 kCameraPosition(0.0f, 3.0f, -12.0f);
+const D3DXVECTOR3 kCameraTarget(0.0f, 0.5f, 0.0f);
+const D3DXVECTOR3 kLightPosition(0.0f, 15.0f, 15.0f);
+const D3DXVECTOR3 kSceneCenter(0.0f, 0.5f, 0.0f);
 
 const D3DXVECTOR3 kCubePositions[] =
 {
@@ -70,8 +76,9 @@ static void TextDraw(LPD3DXFONT pFont, TCHAR* text, int X, int Y);
 static void InitD3D(HWND hWnd);
 static void Cleanup();
 
-static void RenderPass1();
-static void RenderPass2();
+static void RenderScenePass();
+static void RenderOcclusionPass();
+static void RenderCompositePass();
 static void DrawFullscreenQuad();
 
 LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -141,8 +148,9 @@ int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
         {
             Sleep(16);
 
-            RenderPass1();
-            RenderPass2();
+            RenderScenePass();
+            RenderOcclusionPass();
+            RenderCompositePass();
         }
 
         if (g_bClose)
@@ -312,6 +320,17 @@ void InitD3D(HWND hWnd)
 
     assert(hResult == S_OK);
 
+    hResult = D3DXCreateEffectFromFile(g_pd3dDevice,
+                                       _T("mask.fx"),
+                                       NULL,
+                                       NULL,
+                                       D3DXSHADER_DEBUG,
+                                       NULL,
+                                       &g_pMaskEffect,
+                                       NULL);
+
+    assert(hResult == S_OK);
+
     hResult = D3DXCreateSphere(g_pd3dDevice,
                                2.0f,
                                32,
@@ -328,7 +347,17 @@ void InitD3D(HWND hWnd)
                                 D3DUSAGE_RENDERTARGET,
                                 D3DFMT_A8R8G8B8,
                                 D3DPOOL_DEFAULT,
-                                &g_pRenderTarget);
+                                &g_pSceneRenderTarget);
+    assert(hResult == S_OK);
+
+    hResult = D3DXCreateTexture(g_pd3dDevice,
+                                kRenderWidth,
+                                kRenderHeight,
+                                1,
+                                D3DUSAGE_RENDERTARGET,
+                                D3DFMT_A8R8G8B8,
+                                D3DPOOL_DEFAULT,
+                                &g_pOcclusionRenderTarget);
     assert(hResult == S_OK);
 
     D3DVERTEXELEMENT9 elems[] =
@@ -353,12 +382,16 @@ void Cleanup()
     SAFE_RELEASE(g_pMeshSphere);
     SAFE_RELEASE(g_pEffect1);
     SAFE_RELEASE(g_pEffect2);
+    SAFE_RELEASE(g_pMaskEffect);
+    SAFE_RELEASE(g_pSceneRenderTarget);
+    SAFE_RELEASE(g_pOcclusionRenderTarget);
+    SAFE_RELEASE(g_pQuadDecl);
     SAFE_RELEASE(g_pFont);
     SAFE_RELEASE(g_pd3dDevice);
     SAFE_RELEASE(g_pD3D);
 }
 
-void RenderPass1()
+void RenderScenePass()
 {
     HRESULT hResult = E_FAIL;
 
@@ -367,7 +400,7 @@ void RenderPass1()
     assert(hResult == S_OK);
 
     LPDIRECT3DSURFACE9 pRenderTarget;
-    hResult = g_pRenderTarget->GetSurfaceLevel(0, &pRenderTarget);
+    hResult = g_pSceneRenderTarget->GetSurfaceLevel(0, &pRenderTarget);
     assert(hResult == S_OK);
 
     hResult = g_pd3dDevice->SetRenderTarget(0, pRenderTarget);
@@ -382,8 +415,8 @@ void RenderPass1()
                                1.0f,
                                10000.0f);
 
-    D3DXVECTOR3 vec1(0.0f, 3.0f, -12.0f);
-    D3DXVECTOR3 vec2(0, 0.5f, 0);
+    D3DXVECTOR3 vec1 = kCameraPosition;
+    D3DXVECTOR3 vec2 = kCameraTarget;
     D3DXVECTOR3 vec3(0, 1, 0);
     D3DXMatrixLookAtLH(&View, &vec1, &vec2, &vec3);
 
@@ -445,7 +478,7 @@ void RenderPass1()
     {
         D3DXMATRIX lightWorld;
         D3DXMATRIX lightWorldViewProj;
-        D3DXMatrixTranslation(&lightWorld, 0.0f, 15.0f, 15.0f);
+        D3DXMatrixTranslation(&lightWorld, kLightPosition.x, kLightPosition.y, kLightPosition.z);
         lightWorldViewProj = lightWorld * View * Proj;
 
         hResult = g_pEffect1->SetMatrix("g_matWorldViewProj", &lightWorldViewProj);
@@ -472,49 +505,118 @@ void RenderPass1()
 
     hResult = g_pd3dDevice->SetRenderTarget(0, pOldRenderTarget);
     assert(hResult == S_OK);
+
+    SAFE_RELEASE(pRenderTarget);
+    SAFE_RELEASE(pOldRenderTarget);
 }
 
-void RenderPass2()
+void RenderOcclusionPass()
 {
     HRESULT hResult = E_FAIL;
 
-    // 光源座標
-    D3DXMATRIX VP = g_View * g_Proj;
-    D3DXVECTOR4 p(0, 15, 15, 1);
-    D3DXVec4Transform(&p, &p, &VP);
+    LPDIRECT3DSURFACE9 pOldRenderTarget = nullptr;
+    hResult = g_pd3dDevice->GetRenderTarget(0, &pOldRenderTarget);
+    assert(hResult == S_OK);
 
-    // NDC → [0,1] のUVへ
-    float lightUV[2] = { 0.5f, 0.5f };
-    if (p.w != 0.0f)
+    LPDIRECT3DSURFACE9 pRenderTarget;
+    hResult = g_pOcclusionRenderTarget->GetSurfaceLevel(0, &pRenderTarget);
+    assert(hResult == S_OK);
+
+    hResult = g_pd3dDevice->SetRenderTarget(0, pRenderTarget);
+    assert(hResult == S_OK);
+
+    hResult = g_pd3dDevice->Clear(0,
+                                  NULL,
+                                  D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+                                  D3DCOLOR_ARGB(255, 255, 255, 255),
+                                  1.0f,
+                                  0);
+    assert(hResult == S_OK);
+
+    hResult = g_pd3dDevice->BeginScene();
+    assert(hResult == S_OK);
+
+    hResult = g_pMaskEffect->SetTechnique("Technique1");
+    assert(hResult == S_OK);
+
+    UINT numPass = 0;
+    hResult = g_pMaskEffect->Begin(&numPass, 0);
+    assert(hResult == S_OK);
+
+    hResult = g_pMaskEffect->BeginPass(0);
+    assert(hResult == S_OK);
+
+    for (const D3DXVECTOR3& cubePos : kCubePositions)
     {
-        float invW = 1.0f / p.w;
-        float ndcX = p.x * invW;    // -1..1
-        float ndcY = p.y * invW;    // -1..1（画面上を+にしたいので後で符号反転）
+        D3DXMATRIX world;
+        D3DXMATRIX worldViewProj;
+        D3DXMatrixTranslation(&world, cubePos.x, cubePos.y, cubePos.z);
+        worldViewProj = world * g_View * g_Proj;
 
-        lightUV[0] = ndcX * 0.5f + 0.5f;
-        lightUV[1] = -ndcY * 0.5f + 0.5f; // 上が0のUV系に合わせる
+        hResult = g_pMaskEffect->SetMatrix("g_matWorldViewProj", &worldViewProj);
+        assert(hResult == S_OK);
 
-        if (p.w < -0.f)
+        hResult = g_pMaskEffect->CommitChanges();
+        assert(hResult == S_OK);
+
+        for (DWORD i = 0; i < g_dwNumMaterials; i++)
         {
-            g_pEffect2->SetFloat("g_bVisible", 0.f);
-        }
-        else
-        {
-            g_pEffect2->SetFloat("g_bVisible", 1.f);
+            hResult = g_pMesh->DrawSubset(i);
+            assert(hResult == S_OK);
         }
     }
 
-    // エフェクトへセット（単位は 0..1 のUV）
-    g_pEffect2->SetFloatArray("g_LightScreenPos", lightUV, 2);
+    hResult = g_pMaskEffect->EndPass();
+    assert(hResult == S_OK);
 
-    // 好みでチューニング可能（省略可）
-    g_pEffect2->SetFloat("g_Exposure", 0.9f);
-    g_pEffect2->SetFloat("g_Decay", 0.95f);
-    g_pEffect2->SetFloat("g_Density", 0.3f);
-    g_pEffect2->SetFloat("g_Weight", 0.35f);
-    g_pEffect2->SetFloat("g_Threshold", 0.7f);
+    hResult = g_pMaskEffect->End();
+    assert(hResult == S_OK);
 
-    g_pEffect2->CommitChanges();
+    hResult = g_pd3dDevice->EndScene();
+    assert(hResult == S_OK);
+
+    hResult = g_pd3dDevice->SetRenderTarget(0, pOldRenderTarget);
+    assert(hResult == S_OK);
+
+    SAFE_RELEASE(pRenderTarget);
+    SAFE_RELEASE(pOldRenderTarget);
+}
+
+void RenderCompositePass()
+{
+    HRESULT hResult = E_FAIL;
+
+    D3DXMATRIX VP = g_View * g_Proj;
+    D3DXVECTOR4 projectedLight(kLightPosition.x, kLightPosition.y, kLightPosition.z, 1.0f);
+    D3DXVec4Transform(&projectedLight, &projectedLight, &VP);
+
+    float lightUV[2] = { 0.5f, 0.5f };
+    float lightVisible = 0.0f;
+    if (projectedLight.w > 0.0f)
+    {
+        float invW = 1.0f / projectedLight.w;
+        float ndcX = projectedLight.x * invW;
+        float ndcY = projectedLight.y * invW;
+        lightUV[0] = ndcX * 0.5f + 0.5f;
+        lightUV[1] = -ndcY * 0.5f + 0.5f;
+        lightVisible = 1.0f;
+    }
+
+    hResult = g_pEffect2->SetFloatArray("g_LightScreenPos", lightUV, 2);
+    assert(hResult == S_OK);
+
+    hResult = g_pEffect2->SetFloat("g_RayLength", 1.0f);
+    assert(hResult == S_OK);
+
+    hResult = g_pEffect2->SetFloat("g_RayIntensity", 0.6f * lightVisible);
+    assert(hResult == S_OK);
+
+    hResult = g_pEffect2->SetFloat("g_DebugShowOcclusion", 0.0f);
+    assert(hResult == S_OK);
+
+    const float lightColor[3] = { 1.0f, 0.95f, 0.82f };
+    hResult = g_pEffect2->SetFloatArray("g_LightColor", lightColor, 3);
+    assert(hResult == S_OK);
 
     hResult = g_pd3dDevice->Clear(0,
                                   NULL,
@@ -524,7 +626,6 @@ void RenderPass2()
                                   0);
     assert(hResult == S_OK);
 
-    // 2Dフルスクリーン描画なのでZは不要
     hResult = g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
     assert(hResult == S_OK);
 
@@ -541,7 +642,10 @@ void RenderPass2()
     hResult = g_pEffect2->BeginPass(0);
     assert(hResult == S_OK);
 
-    hResult = g_pEffect2->SetTexture("texture1", g_pRenderTarget);
+    hResult = g_pEffect2->SetTexture("g_SceneTexture", g_pSceneRenderTarget);
+    assert(hResult == S_OK);
+
+    hResult = g_pEffect2->SetTexture("g_OcclusionTexture", g_pOcclusionRenderTarget);
     assert(hResult == S_OK);
 
     hResult = g_pEffect2->CommitChanges();
